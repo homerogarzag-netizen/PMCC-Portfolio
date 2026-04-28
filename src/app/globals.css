@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 210 40% 98%;
+    --border: 240 3.7% 15.9%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-zinc-800;
+  }
+  body {
+    @apply bg-slate-950 text-zinc-100 font-sans;
+  }
+}
+
+.data-table-container {
+  @apply overflow-x-auto border border-zinc-800 bg-zinc-900 rounded-md;
+  scrollbar-width: thin;
+  scrollbar-color: #27272a transparent;
+}
+
+.data-table-container::-webkit-scrollbar {
+  height: 6px;
+}
+
+.data-table-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.data-table-container::-webkit-scrollbar-thumb {
+  background-color: #27272a;
+  border-radius: 20px;
+}
+
+.data-table {
+  @apply w-full text-left text-[11px] leading-tight border-collapse;
+  min-width: 900px; /* Force minimum width to trigger scrollbar on small screens */
+}
+
+.data-table th {
+  @apply px-3 py-2 font-semibold uppercase tracking-wider text-zinc-500 border-b border-zinc-800 bg-zinc-950/50 whitespace-nowrap;
+}
+
+.data-table td {
+  @apply px-3 py-2 border-b border-zinc-800/50 font-mono;
+}
+
+.data-table tr:hover {
+  @apply bg-zinc-800/20;
+}
