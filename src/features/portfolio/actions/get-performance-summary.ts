@@ -37,8 +37,7 @@ export async function getPerformanceSummary() {
     .select(`
       *,
       option_legs(*),
-      closed_trades(*),
-      transactions(*)
+      transactions(amount, type)
     `)
     .eq('user_id', session.user.id)
 

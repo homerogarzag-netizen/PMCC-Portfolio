@@ -12,6 +12,11 @@ export async function syncTradierAction() {
     const userId = session.user.id
 
     // 1. Sync Current Positions
+    // Deactivamos todas las piernas primero para asegurar que posiciones cerradas desaparezcan
+    await supabase.from('option_legs')
+      .update({ is_active: false })
+      .in('campaign_id', (await supabase.from('pmcc_campaigns').select('id').eq('user_id', userId)).data?.map(c => c.id) || [])
+
     const positions = await TradierService.fetchPositions()
     const pmccGroups = TradierService.groupIntoPMCC(positions)
 
@@ -39,9 +44,11 @@ export async function syncTradierAction() {
         // Limpiar piernas anteriores (sincronización destructiva para el estado actual)
         await supabase.from('option_legs').update({ is_active: false }).eq('campaign_id', campaign.id)
         
-        // Insertar todas las piernas LEAP
+        const allLegs = []
+
+        // Collect LEAP legs
         for (const leap of group.leaps) {
-          await supabase.from('option_legs').insert({
+          allLegs.push({
             campaign_id: campaign.id,
             type: 'leap',
             strike: leap.strike,
@@ -52,9 +59,9 @@ export async function syncTradierAction() {
           })
         }
 
-        // Insertar todas las piernas Short Call
+        // Collect Short Call legs
         for (const short of group.shortCalls) {
-          await supabase.from('option_legs').insert({
+          allLegs.push({
             campaign_id: campaign.id,
             type: 'short_call',
             strike: short.strike,
@@ -63,6 +70,12 @@ export async function syncTradierAction() {
             entry_price: short.entryPrice,
             is_active: true
           })
+        }
+
+        // Bulk insert all legs for this campaign
+        if (allLegs.length > 0) {
+          const { error: legError } = await supabase.from('option_legs').insert(allLegs)
+          if (legError) throw legError
         }
       }
     }
@@ -75,12 +88,23 @@ export async function syncTradierAction() {
       .limit(1)
       .maybeSingle()
 
-    const historyStartDate = lastTx ? lastTx.transaction_date.split('T')[0] : '2025-11-01'
+    const historyStartDate = lastTx ? lastTx.transaction_date.split('T')[0] : '2024-01-01'
     console.log(`[SyncHistory] Iniciando Delta Sync desde: ${historyStartDate}`)
     
+    // Get all existing transactions since the start date for bulk comparison
+    const { data: existingTxs } = await supabase
+      .from('transactions')
+      .select('campaign_id, amount, transaction_date, description')
+      .gte('transaction_date', historyStartDate)
+
+    const existingSet = new Set(existingTxs?.map(tx => 
+      `${tx.campaign_id}|${tx.transaction_date.split('T')[0]}|${Number(tx.amount)}`
+    ))
+
     let historyPage = 1
     let hasMoreHistory = true
     let transactionCount = 0
+    const newTransactions = []
     
     // Get only ACTIVE campaigns for mapping to prevent mixing with closed ones
     const { data: activeCampaigns } = await supabase
@@ -110,32 +134,24 @@ export async function syncTradierAction() {
         // Ignore PUTs (PMCC only uses Calls)
         if (tickerInfo.type === 'P') continue
 
-        const tradeDate = new Date(event.date.split('T')[0] + 'T00:00:00Z')
-        const expDate = new Date(tickerInfo.expiration + 'T00:00:00Z')
-        const daysToExp = Math.floor((expDate.getTime() - tradeDate.getTime()) / (1000 * 3600 * 24))
-        
-        let type = event.amount > 0 ? 'premium_collected' : 'roll_cost'
-        if (event.trade.quantity > 0 && daysToExp > 180) {
-          type = 'initial_capital'
-        }
+        // Duplicate Check (Idempotencia) using local Set
+        const uniqueKey = `${campaign.id}|${event.date.split('T')[0]}|${Number(event.amount)}`
 
-        // FORCE consistent description with quantity: "ACTION QTY SYMBOL @ PRICE"
-        const action = event.trade.quantity > 0 ? 'BUY' : 'SELL'
-        const qty = Math.abs(event.trade.quantity)
-        const description = `${action} ${qty} ${event.trade.symbol} @ ${event.trade.price}`
-        
-        // Duplicate Check (Idempotencia)
-        const { data: existing } = await supabase
-          .from('transactions')
-          .select('id, type, description')
-          .eq('campaign_id', campaign.id)
-          .eq('transaction_date', event.date)
-          .eq('amount', event.amount)
-          .limit(1)
-          .maybeSingle()
+        if (!existingSet.has(uniqueKey)) {
+          const tradeDate = new Date(event.date.split('T')[0] + 'T00:00:00Z')
+          const expDate = new Date(tickerInfo.expiration + 'T00:00:00Z')
+          const daysToExp = Math.floor((expDate.getTime() - tradeDate.getTime()) / (1000 * 3600 * 24))
+          
+          let type = event.amount > 0 ? 'premium_collected' : 'roll_cost'
+          if (event.trade.quantity > 0 && daysToExp > 180) {
+            type = 'initial_capital'
+          }
 
-        if (!existing) {
-          await supabase.from('transactions').insert({
+          const action = event.trade.quantity > 0 ? 'BUY' : 'SELL'
+          const qty = Math.abs(event.trade.quantity)
+          const description = `${action} ${qty} ${event.trade.symbol} @ ${event.trade.price}`
+
+          newTransactions.push({
             campaign_id: campaign.id,
             type,
             amount: event.amount,
@@ -143,10 +159,6 @@ export async function syncTradierAction() {
             transaction_date: event.date
           })
           transactionCount++
-        } else if (existing.description !== description) {
-          // Solo actualizamos la descripción si le falta la cantidad (registros viejos)
-          // NUNCA sobreescribimos el 'type' para respetar las ediciones manuales del usuario.
-          await supabase.from('transactions').update({ description }).eq('id', existing.id)
         }
       }
 
@@ -155,6 +167,12 @@ export async function syncTradierAction() {
       } else {
         historyPage++
       }
+    }
+
+    // Bulk Insert new transactions from history
+    if (newTransactions.length > 0) {
+      const { error: insError } = await supabase.from('transactions').insert(newTransactions)
+      if (insError) throw insError
     }
 
     // 3. Sync Realized Gain/Loss - Incremental Delta Sync
@@ -180,22 +198,17 @@ export async function syncTradierAction() {
         break
       }
 
+      const glUpserts = []
+
       for (const cp of closedPositions) {
         // Intentar encontrar la campaña por Ticker
         const ticker = TradierService.parseOptionSymbol(cp.symbol, cp.quantity, cp.cost).ticker
         
-        const { data: campaign } = await supabase
-          .from('pmcc_campaigns')
-          .select('id')
-          .eq('user_id', userId)
-          .eq('ticker', ticker)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single()
+        const campaign = activeCampaigns?.find(c => c.ticker === ticker)
         
         if (!campaign) continue
 
-        await supabase.from('closed_trades').upsert({
+        glUpserts.push({
           external_id: `gl-${cp.symbol}-${cp.close_date}-${cp.quantity}`,
           user_id: userId,
           campaign_id: campaign.id,
@@ -208,7 +221,12 @@ export async function syncTradierAction() {
           gain_loss: cp.gain_loss,
           gain_loss_percent: cp.gain_loss_percent,
           quantity: cp.quantity
-        }, { onConflict: 'external_id' })
+        })
+      }
+
+      if (glUpserts.length > 0) {
+        const { error: glError } = await supabase.from('closed_trades').upsert(glUpserts, { onConflict: 'external_id' })
+        if (glError) throw glError
       }
 
       if (closedPositions.length < 100) {

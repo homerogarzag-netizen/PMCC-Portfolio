@@ -12,6 +12,7 @@ export function TopNav() {
     { href: '/radar', label: 'El Radar' },
     { href: '/laboratorio', label: 'El Laboratorio' },
     { href: '/log', label: 'La Bitácora' },
+    { href: '/performance', label: 'Analítica' },
   ]
 
   return (

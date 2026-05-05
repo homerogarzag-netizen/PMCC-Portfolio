@@ -10,8 +10,12 @@ export async function getTransactionLog() {
   const { data, error } = await supabase
     .from('transactions')
     .select(`
-      *,
-      pmcc_campaigns(ticker)
+      id,
+      transaction_date,
+      description,
+      amount,
+      type,
+      pmcc_campaigns(ticker, status)
     `)
     .order('transaction_date', { ascending: false })
 
@@ -22,8 +26,9 @@ export async function getTransactionLog() {
 
   return data.map(tx => ({
     id: tx.id,
-    date: new Date(tx.transaction_date).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: '2-digit' }),
+    date: new Date(tx.transaction_date).toLocaleDateString('es-MX', { timeZone: 'UTC', year: 'numeric', month: 'short', day: '2-digit' }),
     ticker: tx.pmcc_campaigns?.ticker || 'N/A',
+    status: tx.pmcc_campaigns?.status || 'active',
     description: tx.description,
     amount: tx.amount,
     type: tx.type

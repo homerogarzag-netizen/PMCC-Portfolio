@@ -133,6 +133,31 @@ export class TradierService {
   }
 
   /**
+   * Fetches current day orders from Tradier
+   */
+  static async fetchOrders(): Promise<any[]> {
+    const response = await fetch(
+      `https://api.tradier.com/v1/accounts/${this.ACCOUNT_ID}/orders`,
+      {
+        headers: {
+          Authorization: `Bearer ${this.TOKEN}`,
+          Accept: 'application/json',
+        },
+        next: { revalidate: 0 },
+        cache: 'no-store'
+      }
+    )
+
+    if (!response.ok) {
+      throw new Error(`Tradier Orders API failed: ${response.statusText}`)
+    }
+
+    const data = await response.json()
+    const orders = data.orders?.order || []
+    return Array.isArray(orders) ? orders : [orders]
+  }
+
+  /**
    * Parses an OCC option symbol into its components
    */
   static parseOptionSymbol(symbol: string, quantity: number, costBasis: number): ParsedOption {

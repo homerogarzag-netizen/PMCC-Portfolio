@@ -6,9 +6,10 @@ interface Props {
   campaigns: CampaignPerformance[];
   selectedTicker?: string | null;
   onSelect: (ticker: string | null) => void;
+  onUpdateStatus?: (campaignId: string, status: 'active' | 'closed') => Promise<void>;
 }
 
-export function PerformanceSummary({ campaigns, selectedTicker, onSelect }: Props) {
+export function PerformanceSummary({ campaigns, selectedTicker, onSelect, onUpdateStatus }: Props) {
   if (campaigns.length === 0) return null
 
   return (
@@ -19,6 +20,7 @@ export function PerformanceSummary({ campaigns, selectedTicker, onSelect }: Prop
           summary={summary} 
           isSelected={selectedTicker === summary.ticker}
           onSelect={() => onSelect(selectedTicker === summary.ticker ? null : summary.ticker)}
+          onToggleStatus={() => onUpdateStatus?.(summary.campaignId, summary.status === 'active' ? 'closed' : 'active')}
         />
       ))}
     </div>
@@ -28,11 +30,13 @@ export function PerformanceSummary({ campaigns, selectedTicker, onSelect }: Prop
 function PerformanceCard({ 
   summary, 
   isSelected, 
-  onSelect 
+  onSelect,
+  onToggleStatus
 }: { 
   summary: CampaignPerformance, 
   isSelected: boolean,
-  onSelect: () => void 
+  onSelect: () => void,
+  onToggleStatus: () => void
 }) {
   return (
     <div 
@@ -50,11 +54,26 @@ function PerformanceCard({
 
       <div className="flex justify-between items-start mb-6 pt-2">
         <div>
-          <h3 className="text-2xl font-bold tracking-tighter text-zinc-100 uppercase italic">
-            {summary.ticker}
-          </h3>
+          <div className="flex items-center gap-3">
+            <h3 className="text-2xl font-bold tracking-tighter text-zinc-100 uppercase italic">
+              {summary.ticker}
+            </h3>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation()
+                onToggleStatus()
+              }}
+              className={`text-[8px] font-bold uppercase px-2 py-0.5 rounded-sm border transition-colors ${
+                summary.status === 'active' 
+                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/20' 
+                  : 'bg-zinc-800 border-zinc-700 text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300'
+              }`}
+            >
+              {summary.status === 'active' ? 'Cerrar' : 'Reabrir'}
+            </button>
+          </div>
           <p className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest mt-1">
-            {summary.status === 'active' ? 'Campaign in Progress' : 'Closed'}
+            {summary.status === 'active' ? 'Campaign in Progress' : 'Cerrada / Histórico'}
           </p>
         </div>
         <div className="text-right">

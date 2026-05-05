@@ -4,7 +4,7 @@ import { createClient } from '@/shared/lib/supabase/server'
 import { getCentinelaDiagnosis, getNakedDiagnosis } from '../lib/centinela-advisor'
 import { TradierService } from '../services/tradier-service'
 
-export async function getCampaigns() {
+export async function getCampaigns(status: 'active' | 'closed' | 'all' = 'active') {
   const supabase = await createClient()
   
   const { data: { session } } = await supabase.auth.getSession()
@@ -13,14 +13,19 @@ export async function getCampaigns() {
   const userId = session.user.id
 
   // Fetch campaigns
-  const { data, error } = await supabase
+  let query = supabase
     .from('pmcc_campaigns')
     .select(`
       *,
       option_legs(*)
     `)
     .eq('user_id', userId)
-    .eq('status', 'active')
+
+  if (status !== 'all') {
+    query = query.eq('status', status)
+  }
+
+  const { data, error } = await query
 
   if (error) return []
 

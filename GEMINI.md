@@ -299,6 +299,11 @@ test('should calculate total with tax', () => {
 
 > Esta sección CRECE con cada error encontrado.
 
+### 2026-04-28: Desfase de Zona Horaria en Fechas de Supabase
+- **Error**: Al renderizar `tx.transaction_date` (UTC) en el servidor/cliente usando `new Date().toLocaleDateString()`, la zona horaria local (-6 hrs) restaba horas y cambiaba la fecha visual al día anterior (ej. 24 abr -> 23 abr).
+- **Fix**: Siempre forzar `timeZone: 'UTC'` en las opciones de `toLocaleDateString()` cuando la fecha solo represente un día calendario inmutable.
+- **Aplicar en**: Todos los dashboards y bitácoras que rendericen fechas desde Postgres.
+
 ### 2025-01-09: Usar npm run dev, no next dev
 - **Error**: Puerto hardcodeado causa conflictos
 - **Fix**: Siempre usar `npm run dev` (auto-detecta puerto)
